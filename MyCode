@@ -1,0 +1,173 @@
+import re
+import os
+import wmi
+import time
+from datetime import datetime
+import base64
+import tkinter as tk
+from Crypto.PublicKey import RSA
+from Crypto.Hash import SHA384
+from Crypto.Signature import PKCS1_v1_5 as PKCS1_signature
+import pyperclip
+import webbrowser
+
+
+
+pubkey_bytes = b'-----BEGIN PUBLIC KEY-----\nMIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAudldX0PJXheTD8jBG8+7\nmjtxVD6EGu+Y1Jnz7ySlwkI69+Q0Jw8Ujtz7n2deplbbDMBokQiEydzhiJCd90LR\nfeTgzgfTaW3OkQwOxUQENV1dVRLEY3Hx0nhWmfHz+LCc6GhNhCe9tg9QI5ZkNh2q\n9UlAMsOAkUGpsXWqBFfQBi+LYQLyilj1nI3azjEnu3J5YcxYoopW8ZX22ZwAP76B\njTqAHNPYREjNNu8x7zdxYu0vOUIINL7kOlz15dz/0e06DFVD36AvdvstaP7eemWg\nml4DcAR0aYqdfaGV4JnHRSQDMSlcNaZun7B10LgETeewkTpdZzd5+SO2bg4+x56d\nBwIDAQAB\n-----END PUBLIC KEY-----'
+contact = "123"
+contact_url = "www.hao123.com"
+width_and_height = "404x320"
+pubkey_verifier = PKCS1_signature.new(RSA.importKey(pubkey_bytes))
+c = wmi.WMI()
+# 获取CPU序列号
+for index, cpu in enumerate(c.Win32_Processor()):
+    cpu_id = cpu.ProcessorId.strip()
+# 本机 id: BFEBFBFF000806EC
+
+
+def login():
+    colors = ['blue', 'red', 'black', 'green', 'purple', 'orange']
+    ind = 0
+    
+    def open_contact_link():
+        webbrowser.open(contact_url)
+        
+    def copy():
+        nonlocal ind
+        pyperclip.copy(cpu_id)
+        ind = (ind + 1) % 6
+        button1.config(fg=colors[ind])
+
+    def reset():
+        text1.delete(1.0, 'end')
+
+    def activate():
+        nonlocal ind
+        ind = (ind + 1) % 6
+        label4.config(text='', fg=colors[ind])
+        # 再处理身份标识符和数字签名
+        try:
+            activation_code = eval(text1.get(1.0, 'end').rstrip('\n'))
+            signature = base64.b64decode(activation_code["数字签名"])
+            hasher = SHA384.new()
+            hasher.update('/'.join([cpu_id, activation_code["激活时间"], activation_code["有效期限"]]).encode('utf-8'))
+            # 注意一下，这里的 activation_code 的来源是用户输入的信息，而不是保存在文件中的
+        except Exception:
+            label4.config(text='激活码格式错误')
+        else:
+            if pubkey_verifier.verify(hasher, signature) and (activation_code["有效期限"] == '永久' or eval(activation_code["有效期限"].rstrip('天')) - (datetime.now() - datetime.strptime(activation_code['激活时间'], "%Y-%m-%d %H:%M:%S.%f")).days >= 0):
+                label4.config(text='激活成功，3秒后软件将自动启动，请勿关闭窗口')
+                activate_window.update()
+                with open("system_resource/activation_code.txt", 'w', encoding='utf-8') as f:
+                    f.write(str(activation_code))
+                time.sleep(3)
+                activate_window.destroy()
+                import demonstration
+            else:
+                label4.config(text='激活失败')
+
+    activate_window = tk.Tk()
+    activate_window.title('产品激活')
+    activate_window.geometry(width_and_height)
+    label1 = tk.Label(activate_window, text='请将下方身份标识符发送给销售客服进行产品激活', font=mid_font)
+    label1.pack()
+    label2 = tk.Label(activate_window, text=f'或联系管理员 {contact}', font=mid_font, fg='green', cursor='hand2')
+    label2.pack()
+    label2.bind("<Button-1>", lambda e: open_contact_link())
+    frm1 = tk.Frame(activate_window)
+    frm1.pack()
+    label5 = tk.Label(frm1, font=mid_font, text='身份标识符：')
+    label5.grid(row=1, column=1)
+    entry1 = tk.Entry(frm1, font=mid_font)
+    entry1.grid(row=1, column=2, padx=10)
+    entry1.insert(0, cpu_id)
+    entry1.config(state='readonly')
+    button1 = tk.Button(frm1, text='复制', fg=colors[ind], command=copy, font=mid_font)
+    button1.grid(row=1, column=3, padx=10)
+    label3 = tk.Label(activate_window, text='请输入您的专属激活码：', font=mid_font)
+    label3.pack()
+    text1 = tk.Text(activate_window, width=44, height=8, font=mid_font)
+    text1.pack()
+    frm2 = tk.Frame(activate_window)
+    frm2.pack()
+    button2 = tk.Button(frm2, text='重置', command=reset, font=mid_font)
+    button2.grid(row=1, column=1, padx=20)
+    button3 = tk.Button(frm2, text='激活', command=activate, font=mid_font)
+    button3.grid(row=1, column=2, padx=20)
+    label4 = tk.Label(activate_window, text='', font=mid_font)
+    label4.pack()
+
+    activate_window.mainloop()
+
+
+mid_font = ('Noto Sans Mono', 13)
+if not os.path.exists("system_resource"):
+    os.mkdir("system_resource")
+try:
+    with open("system_resource/activation_code.txt", 'r', encoding='utf-8') as f:
+        activation_code = eval(f.read())
+    signature = base64.b64decode(activation_code["数字签名"])
+    hasher = SHA384.new()
+    hasher.update('/'.join([cpu_id, activation_code["激活时间"], activation_code["有效期限"]]).encode('utf-8'))
+    # 注意一下，这里的 activation_code 的来源是保存在文件中的信息，而不是用户输入的
+    if pubkey_verifier.verify(hasher, signature):
+        if activation_code["有效期限"] == '永久':
+            import demonstration
+
+        elif 0 <= eval(activation_code['有效期限'].rstrip('天')) - (datetime.now() - datetime.strptime(activation_code['激活时间'], "%Y-%m-%d %H:%M:%S.%f")).days <= 7:
+            # 剩余有效期小于等于7天，大于等于0天
+            prompt_window = tk.Tk()
+            prompt_window.geometry('350x80')
+            prompt_window.title('激活即将到期')
+            label1 = tk.Label(prompt_window, text=f"激活剩余有效期：{eval(activation_code['有效期限'].rstrip('天')) - (datetime.now() - datetime.strptime(activation_code['激活时间'], '%Y-%m-%d %H:%M:%S.%f')).days}天", font=mid_font)
+            label1.pack()
+            label2 = tk.Label(prompt_window, text='请联系客服或管理员及时续费', font=mid_font)
+            label2.pack()
+            frm1 = tk.Frame(prompt_window)
+            frm1.pack()
+
+            def renew():
+                prompt_window.destroy()
+                login()
+
+            def not_yet():
+                prompt_window.destroy()
+                import demonstration
+
+            def on_closing():
+                prompt_window.destroy()
+                import demonstration
+
+            button1 = tk.Button(frm1, text='立即续费', font=mid_font, command=renew)
+            button1.grid(row=1, column=1, padx=10)
+            button2 = tk.Button(frm1, text='暂不续费', font=mid_font, command=not_yet)
+            button2.grid(row=1, column=2, padx=10)
+
+            prompt_window.protocol("WM_DELETE_WINDOW", on_closing)
+            prompt_window.mainloop()
+
+        elif eval(activation_code["有效期限"].rstrip('天')) - (datetime.now() - datetime.strptime(activation_code['激活时间'], "%Y-%m-%d %H:%M:%S.%f")).days < 0:
+            # 剩余有效期小于0天（已经过期）
+            prompt_window = tk.Tk()
+            prompt_window.geometry('350x80')
+            prompt_window.title('激活已到期')
+            label1 = tk.Label(prompt_window, text='您的激活码已经到期', font=mid_font)
+            label1.pack()
+            label2 = tk.Label(prompt_window, text='请联系客服或管理员重新激活', font=mid_font)
+            label2.pack()
+
+            def renew():
+                prompt_window.destroy()
+                login()
+
+            button1 = tk.Button(prompt_window, text='重新激活', font=mid_font, command=renew)
+            button1.pack()
+
+            prompt_window.mainloop()
+
+        else:  # 剩余期限大于7天
+            import demonstration
+    else:  # 验证失败
+        login()
+except Exception:  # 上面的任何一个环节报错都会要求重新激活
+    login()
